@@ -1,73 +1,38 @@
-# React + TypeScript + Vite
+# Member Database
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A professional, real-time cloud database for managing member records. Built with React (TypeScript), Supabase (Cloud Sync), and Vite.
 
-Currently, two official plugins are available:
+## 🚀 Live Link
+[View the Database](https://thrictical.github.io/Database/)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## ✨ Features
+- **Cloud Sync**: Data is shared across all your devices instantly.
+- **Professional UI**: Spreadsheet-style table with real-time editing.
+- **Search & Filtering**: Find members by name quickly.
+- **Modern Design**: Clean glassmorphism aesthetic.
 
-## React Compiler
+## 🛠️ How to Deploy
+If you are making changes locally, follow these steps to update your site:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+1. **Push your code**:
+   ```bash
+   git add .
+   git commit -m "Update database"
+   git push origin main
+   ```
 
-## Expanding the ESLint configuration
+2. **Publish to the Web**:
+   ```bash
+   npm run deploy
+   ```
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## ☁️ Cloud Setup (Supabase)
+To sync data across devices:
+1. Create a project at [supabase.com](https://supabase.com).
+2. Run the table creation SQL (found in project notes).
+3. Add your `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to a `.env` file.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## 📦 Project Structure
+- `src/App.tsx`: The main database application and logic.
+- `src/App.css`: Professional styling and layout.
+- `public/`: Assets and icons.
