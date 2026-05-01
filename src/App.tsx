@@ -1,5 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import './App.css';
+
+// --- DATABASE CONFIGURATION ---
+// Replace these with your own Supabase project details to share data across devices!
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
+const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) 
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
+  : null;
 
 interface Customer {
   id: number;
@@ -15,38 +25,35 @@ function App() {
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-
-  // Check if we should use LocalStorage (always true on GitHub Pages)
-  const isLocalStorage = window.location.hostname !== 'localhost';
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/customers';
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchCustomers();
   }, []);
 
   const fetchCustomers = async () => {
-    if (isLocalStorage) {
+    setLoading(true);
+    if (!supabase) {
+      // Fallback to LocalStorage if Supabase isn't configured yet
       const stored = localStorage.getItem('customers');
-      if (stored) {
-        setCustomers(JSON.parse(stored));
-      } else {
-        // Initial sample data if empty
-        const initial = [
-          { id: 1, name: 'Momen Barakat', number: 123456789, info: 'Developer of this app' },
-          { id: 2, name: 'Gemini CLI', number: 987654321, info: 'AI Assistant' }
-        ];
-        setCustomers(initial);
-        localStorage.setItem('customers', JSON.stringify(initial));
-      }
+      setCustomers(stored ? JSON.parse(stored) : []);
+      setLoading(false);
       return;
     }
 
     try {
-      const response = await fetch(API_URL);
-      const data = await response.json();
-      setCustomers(data);
-    } catch (error) {
-      console.error('Error fetching customers:', error);
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      setCustomers(data || []);
+    } catch (err: any) {
+      console.error('Error fetching:', err.message);
+      setError('Failed to sync with Cloud. Using local data.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -61,55 +68,70 @@ function App() {
       info: formData.info,
     };
 
-    if (isLocalStorage) {
-      let updatedCustomers;
+    if (!supabase) {
+      // LocalStorage Logic
+      let updated;
       if (editingId) {
-        updatedCustomers = customers.map(c => 
-          c.id === editingId ? { ...c, ...customerData } : c
-        );
+        updated = customers.map(c => c.id === editingId ? { ...c, ...customerData } : c);
       } else {
-        const newCustomer = {
-          ...customerData,
-          id: Date.now(), // Simple unique ID
-        };
-        // Check duplicate
         if (customers.some(c => c.name.toLowerCase() === customerData.name.toLowerCase())) {
           setError('Name already exists!');
           return;
         }
-        updatedCustomers = [...customers, newCustomer];
+        updated = [...customers, { ...customerData, id: Date.now() }];
       }
-      
-      setCustomers(updatedCustomers);
-      localStorage.setItem('customers', JSON.stringify(updatedCustomers));
-      setFormData({ name: '', number: '', info: '' });
-      setEditingId(null);
+      setCustomers(updated);
+      localStorage.setItem('customers', JSON.stringify(updated));
+      resetForm();
+      return;
+    }
+
+    // Supabase Cloud Logic
+    try {
+      if (editingId) {
+        const { error } = await supabase
+          .from('customers')
+          .update(customerData)
+          .eq('id', editingId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('customers')
+          .insert([customerData]);
+        if (error) throw error;
+      }
+      fetchCustomers();
+      resetForm();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('Delete this record permanently?')) return;
+
+    if (!supabase) {
+      const updated = customers.filter(c => c.id !== id);
+      setCustomers(updated);
+      localStorage.setItem('customers', JSON.stringify(updated));
       setSelectedCustomer(null);
       return;
     }
 
-    const method = editingId ? 'PUT' : 'POST';
-    const url = editingId ? `${API_URL}/${editingId}` : API_URL;
-
     try {
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(customerData),
-      });
-
-      if (response.ok) {
-        setFormData({ name: '', number: '', info: '' });
-        setEditingId(null);
-        setSelectedCustomer(null);
-        fetchCustomers();
-      } else {
-        const errorData = await response.json();
-        setError(errorData.error || 'Something went wrong');
-      }
-    } catch (error) {
-      setError('Connection failed. Is the server running?');
+      const { error } = await supabase.from('customers').delete().eq('id', id);
+      if (error) throw error;
+      fetchCustomers();
+      setSelectedCustomer(null);
+    } catch (err: any) {
+      setError(err.message);
     }
+  };
+
+  const resetForm = () => {
+    setFormData({ name: '', number: '', info: '' });
+    setEditingId(null);
+    setSelectedCustomer(null);
   };
 
   const handleEdit = (customer: Customer) => {
@@ -119,29 +141,7 @@ function App() {
       number: customer.number.toString(),
       info: customer.info,
     });
-    setSelectedCustomer(null); // Close modal when editing
-  };
-
-  const handleDelete = async (id: number) => {
-    if (!window.confirm('Are you sure you want to delete this customer?')) return;
-
-    if (isLocalStorage) {
-      const updatedCustomers = customers.filter(c => c.id !== id);
-      setCustomers(updatedCustomers);
-      localStorage.setItem('customers', JSON.stringify(updatedCustomers));
-      setSelectedCustomer(null);
-      return;
-    }
-
-    try {
-      const response = await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
-      if (response.ok) {
-        fetchCustomers();
-        setSelectedCustomer(null);
-      }
-    } catch (error) {
-      console.error('Error deleting customer:', error);
-    }
+    setSelectedCustomer(null);
   };
 
   const filteredCustomers = customers.filter(c =>
@@ -152,8 +152,15 @@ function App() {
     <div className="container">
       <header>
         <h1>Member Database</h1>
-        <p>Manage, track, and update member records in real-time</p>
+        <p>{supabase ? '☁️ Cloud Sync Active' : '📱 Local Mode (Setup Cloud below)'}</p>
       </header>
+
+      {!supabase && (
+        <div className="setup-notice glass-panel" style={{marginBottom: '2rem', border: '1px solid #6366f1'}}>
+          <h3>⚠️ Cloud Sync Not Setup</h3>
+          <p>To view members on any device, create a free project at <strong>supabase.com</strong> and add your keys to the project settings.</p>
+        </div>
+      )}
 
       <div className="main-content">
         <section className="form-section glass-panel">
@@ -166,10 +173,7 @@ function App() {
                 type="text"
                 placeholder="e.g. John Doe"
                 value={formData.name}
-                onChange={(e) => {
-                  setFormData({ ...formData, name: e.target.value });
-                  if (error) setError(null);
-                }}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 required
               />
             </div>
@@ -185,24 +189,17 @@ function App() {
             <div className="input-group">
               <label>Member Info / Bio</label>
               <textarea
-                placeholder="Additional details about the member..."
+                placeholder="Additional details..."
                 value={formData.info}
                 onChange={(e) => setFormData({ ...formData, info: e.target.value })}
               />
             </div>
             <div className="form-actions">
-              <button type="submit" className="btn-primary">
+              <button type="submit" className="btn-primary" disabled={loading}>
                 {editingId ? 'Save Changes' : 'Add to Database'}
               </button>
               {editingId && (
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => {
-                    setEditingId(null);
-                    setFormData({ name: '', number: '', info: '' });
-                  }}
-                >
+                <button type="button" className="btn-secondary" onClick={resetForm}>
                   Cancel
                 </button>
               )}
@@ -219,7 +216,7 @@ function App() {
             <div className="search-container">
               <input
                 type="text"
-                placeholder="Search database..."
+                placeholder="Search..."
                 className="search-bar"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -228,60 +225,43 @@ function App() {
           </div>
           
           <div className="table-container">
-            <table className="member-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Phone</th>
-                  <th>Info</th>
-                  <th className="actions-cell">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredCustomers.length > 0 ? (
-                  filteredCustomers.map((customer) => (
-                    <tr key={customer.id} onClick={() => setSelectedCustomer(customer)}>
-                      <td><strong>{customer.name}</strong></td>
-                      <td>{customer.number}</td>
-                      <td className="info-cell">{customer.info || '-'}</td>
-                      <td className="actions-cell">
-                        <div className="action-buttons">
-                          <button 
-                            className="btn-icon edit"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleEdit(customer);
-                            }}
-                            title="Edit"
-                          >
-                            ✏️
-                          </button>
-                          <button 
-                            className="btn-icon delete"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDelete(customer.id);
-                            }}
-                            title="Delete"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
+            {loading ? (
+              <div className="no-data">Loading database...</div>
+            ) : (
+              <table className="member-table">
+                <thead>
                   <tr>
-                    <td colSpan={4} className="no-data">No records found.</td>
+                    <th>Name</th>
+                    <th>Phone</th>
+                    <th>Info</th>
+                    <th className="actions-cell">Actions</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {filteredCustomers.length > 0 ? (
+                    filteredCustomers.map((customer) => (
+                      <tr key={customer.id} onClick={() => setSelectedCustomer(customer)}>
+                        <td><strong>{customer.name}</strong></td>
+                        <td>{customer.number}</td>
+                        <td className="info-cell">{customer.info || '-'}</td>
+                        <td className="actions-cell">
+                          <div className="action-buttons">
+                            <button className="btn-icon edit" onClick={(e) => { e.stopPropagation(); handleEdit(customer); }}>✏️</button>
+                            <button className="btn-icon delete" onClick={(e) => { e.stopPropagation(); handleDelete(customer.id); }}>🗑️</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr><td colSpan={4} className="no-data">No records found.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
         </section>
       </div>
 
-      {/* Detail Modal */}
       {selectedCustomer && (
         <div className="modal-overlay" onClick={() => setSelectedCustomer(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -297,23 +277,13 @@ function App() {
                   <p>{selectedCustomer.number}</p>
                 </div>
                 <div className="detail-item full-width">
-                  <label>Background Information</label>
-                  <p>{selectedCustomer.info || 'No additional details recorded for this member.'}</p>
+                  <label>Information</label>
+                  <p>{selectedCustomer.info || 'No details recorded.'}</p>
                 </div>
               </div>
               <div className="modal-footer">
-                <button 
-                  className="btn-primary"
-                  onClick={() => handleEdit(selectedCustomer)}
-                >
-                  Edit Record
-                </button>
-                <button 
-                  className="btn-danger"
-                  onClick={() => handleDelete(selectedCustomer.id)}
-                >
-                  Delete Permanentely
-                </button>
+                <button className="btn-primary" onClick={() => handleEdit(selectedCustomer)}>Edit Record</button>
+                <button className="btn-danger" onClick={() => handleDelete(selectedCustomer.id)}>Delete Permanentely</button>
               </div>
             </div>
           </div>
