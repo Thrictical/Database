@@ -16,6 +16,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
+  // Check if we should use LocalStorage (always true on GitHub Pages)
+  const isLocalStorage = window.location.hostname !== 'localhost';
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/customers';
 
   useEffect(() => {
@@ -23,6 +25,22 @@ function App() {
   }, []);
 
   const fetchCustomers = async () => {
+    if (isLocalStorage) {
+      const stored = localStorage.getItem('customers');
+      if (stored) {
+        setCustomers(JSON.parse(stored));
+      } else {
+        // Initial sample data if empty
+        const initial = [
+          { id: 1, name: 'Momen Barakat', number: 123456789, info: 'Developer of this app' },
+          { id: 2, name: 'Gemini CLI', number: 987654321, info: 'AI Assistant' }
+        ];
+        setCustomers(initial);
+        localStorage.setItem('customers', JSON.stringify(initial));
+      }
+      return;
+    }
+
     try {
       const response = await fetch(API_URL);
       const data = await response.json();
@@ -37,6 +55,39 @@ function App() {
     if (!formData.name) return;
     setError(null);
 
+    const customerData = {
+      name: formData.name,
+      number: parseInt(formData.number as string) || 0,
+      info: formData.info,
+    };
+
+    if (isLocalStorage) {
+      let updatedCustomers;
+      if (editingId) {
+        updatedCustomers = customers.map(c => 
+          c.id === editingId ? { ...c, ...customerData } : c
+        );
+      } else {
+        const newCustomer = {
+          ...customerData,
+          id: Date.now(), // Simple unique ID
+        };
+        // Check duplicate
+        if (customers.some(c => c.name.toLowerCase() === customerData.name.toLowerCase())) {
+          setError('Name already exists!');
+          return;
+        }
+        updatedCustomers = [...customers, newCustomer];
+      }
+      
+      setCustomers(updatedCustomers);
+      localStorage.setItem('customers', JSON.stringify(updatedCustomers));
+      setFormData({ name: '', number: '', info: '' });
+      setEditingId(null);
+      setSelectedCustomer(null);
+      return;
+    }
+
     const method = editingId ? 'PUT' : 'POST';
     const url = editingId ? `${API_URL}/${editingId}` : API_URL;
 
@@ -44,10 +95,7 @@ function App() {
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
-          number: parseInt(formData.number as string) || 0,
-        }),
+        body: JSON.stringify(customerData),
       });
 
       if (response.ok) {
@@ -76,6 +124,15 @@ function App() {
 
   const handleDelete = async (id: number) => {
     if (!window.confirm('Are you sure you want to delete this customer?')) return;
+
+    if (isLocalStorage) {
+      const updatedCustomers = customers.filter(c => c.id !== id);
+      setCustomers(updatedCustomers);
+      localStorage.setItem('customers', JSON.stringify(updatedCustomers));
+      setSelectedCustomer(null);
+      return;
+    }
+
     try {
       const response = await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
       if (response.ok) {
