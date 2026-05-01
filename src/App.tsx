@@ -151,20 +151,20 @@ function App() {
   return (
     <div className="container">
       <header>
-        <h1>Contact Directory</h1>
-        <p>A simple and efficient way to manage your contact list</p>
+        <h1>Member Database</h1>
+        <p>Manage, track, and update member records in real-time</p>
       </header>
 
       <div className="main-content">
         <section className="form-section glass-panel">
-          <h2>{editingId ? '✨ Edit Member' : '🚀 New Member'}</h2>
+          <h2>{editingId ? '📝 Edit Member' : '➕ Add New Member'}</h2>
           {error && <div className="error-message">{error}</div>}
           <form onSubmit={handleSubmit}>
             <div className="input-group">
               <label>Full Name</label>
               <input
                 type="text"
-                placeholder="Enter full name"
+                placeholder="e.g. John Doe"
                 value={formData.name}
                 onChange={(e) => {
                   setFormData({ ...formData, name: e.target.value });
@@ -177,122 +177,142 @@ function App() {
               <label>Phone Number</label>
               <input
                 type="number"
-                placeholder="Enter phone number"
+                placeholder="e.g. 0790000000"
                 value={formData.number}
                 onChange={(e) => setFormData({ ...formData, number: e.target.value })}
               />
             </div>
             <div className="input-group">
-              <label>Bio / Notes</label>
+              <label>Member Info / Bio</label>
               <textarea
-                placeholder="What defines this person?"
+                placeholder="Additional details about the member..."
                 value={formData.info}
                 onChange={(e) => setFormData({ ...formData, info: e.target.value })}
               />
             </div>
-            <button type="submit" className="btn-primary">
-              {editingId ? 'Update Record' : 'Create Record'}
-            </button>
-            {editingId && (
-              <button
-                type="button"
-                className="btn-secondary"
-                style={{marginTop: '0.5rem'}}
-                onClick={() => {
-                  setEditingId(null);
-                  setFormData({ name: '', number: '', info: '' });
-                }}
-              >
-                Cancel Edit
+            <div className="form-actions">
+              <button type="submit" className="btn-primary">
+                {editingId ? 'Save Changes' : 'Add to Database'}
               </button>
-            )}
+              {editingId && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setEditingId(null);
+                    setFormData({ name: '', number: '', info: '' });
+                  }}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </form>
         </section>
 
-        <section className="list-section">
+        <section className="list-section glass-panel">
           <div className="list-header">
-            <h2>Registry ({filteredCustomers.length})</h2>
-            <input
-              type="text"
-              placeholder="Search..."
-              className="search-bar"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+            <div className="stats">
+              <h2>Database Registry</h2>
+              <span className="count-badge">{filteredCustomers.length} Members</span>
+            </div>
+            <div className="search-container">
+              <input
+                type="text"
+                placeholder="Search database..."
+                className="search-bar"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
           </div>
-          <div className="customer-grid">
-            {filteredCustomers.length > 0 ? (
-              filteredCustomers.map((customer) => (
-                <div 
-                  key={customer.id} 
-                  className="customer-card"
-                  onClick={() => setSelectedCustomer(customer)}
-                >
-                  <div className="card-info">
-                    <h3>{customer.name}</h3>
-                    <p className="phone">📱 {customer.number}</p>
-                  </div>
-                  <div className="card-actions">
-                    <button 
-                      className="btn-edit-small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEdit(customer);
-                      }}
-                      title="Edit"
-                    >
-                      ✏️
-                    </button>
-                    <button 
-                      className="btn-delete-small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(customer.id);
-                      }}
-                      title="Delete"
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="no-data">No records match your search.</div>
-            )}
+          
+          <div className="table-container">
+            <table className="member-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Phone</th>
+                  <th>Info</th>
+                  <th className="actions-cell">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredCustomers.length > 0 ? (
+                  filteredCustomers.map((customer) => (
+                    <tr key={customer.id} onClick={() => setSelectedCustomer(customer)}>
+                      <td><strong>{customer.name}</strong></td>
+                      <td>{customer.number}</td>
+                      <td className="info-cell">{customer.info || '-'}</td>
+                      <td className="actions-cell">
+                        <div className="action-buttons">
+                          <button 
+                            className="btn-icon edit"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEdit(customer);
+                            }}
+                            title="Edit"
+                          >
+                            ✏️
+                          </button>
+                          <button 
+                            className="btn-icon delete"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(customer.id);
+                            }}
+                            title="Delete"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="no-data">No records found.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </section>
       </div>
 
-      {/* Customer Modal */}
+      {/* Detail Modal */}
       {selectedCustomer && (
         <div className="modal-overlay" onClick={() => setSelectedCustomer(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <button className="close-modal" onClick={() => setSelectedCustomer(null)}>✕</button>
             <div className="modal-details">
-              <div className="detail-row">
-                <label>Name</label>
+              <div className="detail-header">
+                <label>Member Record</label>
                 <h2>{selectedCustomer.name}</h2>
               </div>
-              <div className="detail-row">
-                <label>Phone</label>
-                <p>+ {selectedCustomer.number}</p>
+              <div className="detail-grid">
+                <div className="detail-item">
+                  <label>Phone Number</label>
+                  <p>{selectedCustomer.number}</p>
+                </div>
+                <div className="detail-item full-width">
+                  <label>Background Information</label>
+                  <p>{selectedCustomer.info || 'No additional details recorded for this member.'}</p>
+                </div>
               </div>
-              <div className="detail-row">
-                <label>Information</label>
-                <p>{selectedCustomer.info || 'No additional information provided.'}</p>
-              </div>
-              <div className="modal-actions">
+              <div className="modal-footer">
                 <button 
-                  className="btn-edit-large"
+                  className="btn-primary"
                   onClick={() => handleEdit(selectedCustomer)}
                 >
-                  Edit Details
+                  Edit Record
                 </button>
                 <button 
-                  className="btn-delete-large"
+                  className="btn-danger"
                   onClick={() => handleDelete(selectedCustomer.id)}
                 >
-                  Delete
+                  Delete Permanentely
                 </button>
               </div>
             </div>
