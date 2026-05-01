@@ -1,15 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import './App.css';
-
-// --- DATABASE CONFIGURATION ---
-// Replace these with your own Supabase project details to share data across devices!
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-
-const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) 
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
-  : null;
 
 interface Customer {
   id: number;
@@ -25,35 +15,38 @@ function App() {
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  // Check if we should use LocalStorage (always true on GitHub Pages)
+  const isLocalStorage = window.location.hostname !== 'localhost';
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/customers';
 
   useEffect(() => {
     fetchCustomers();
   }, []);
 
   const fetchCustomers = async () => {
-    setLoading(true);
-    if (!supabase) {
-      // Fallback to LocalStorage if Supabase isn't configured yet
+    if (isLocalStorage) {
       const stored = localStorage.getItem('customers');
-      setCustomers(stored ? JSON.parse(stored) : []);
-      setLoading(false);
+      if (stored) {
+        setCustomers(JSON.parse(stored));
+      } else {
+        // Initial sample data if empty
+        const initial = [
+          { id: 1, name: 'Momen Barakat', number: 123456789, info: 'Developer of this app' },
+          { id: 2, name: 'Gemini CLI', number: 987654321, info: 'AI Assistant' }
+        ];
+        setCustomers(initial);
+        localStorage.setItem('customers', JSON.stringify(initial));
+      }
       return;
     }
 
     try {
-      const { data, error } = await supabase
-        .from('customers')
-        .select('*')
-        .order('name', { ascending: true });
-
-      if (error) throw error;
-      setCustomers(data || []);
-    } catch (err: any) {
-      console.error('Error fetching:', err.message);
-      setError('Failed to sync with Cloud. Using local data.');
-    } finally {
-      setLoading(false);
+      const response = await fetch(API_URL);
+      const data = await response.json();
+      setCustomers(data);
+    } catch (error) {
+      console.error('Error fetching customers:', error);
     }
   };
 
@@ -68,70 +61,55 @@ function App() {
       info: formData.info,
     };
 
-    if (!supabase) {
-      // LocalStorage Logic
-      let updated;
+    if (isLocalStorage) {
+      let updatedCustomers;
       if (editingId) {
-        updated = customers.map(c => c.id === editingId ? { ...c, ...customerData } : c);
+        updatedCustomers = customers.map(c => 
+          c.id === editingId ? { ...c, ...customerData } : c
+        );
       } else {
+        const newCustomer = {
+          ...customerData,
+          id: Date.now(), // Simple unique ID
+        };
+        // Check duplicate
         if (customers.some(c => c.name.toLowerCase() === customerData.name.toLowerCase())) {
           setError('Name already exists!');
           return;
         }
-        updated = [...customers, { ...customerData, id: Date.now() }];
+        updatedCustomers = [...customers, newCustomer];
       }
-      setCustomers(updated);
-      localStorage.setItem('customers', JSON.stringify(updated));
-      resetForm();
+      
+      setCustomers(updatedCustomers);
+      localStorage.setItem('customers', JSON.stringify(updatedCustomers));
+      setFormData({ name: '', number: '', info: '' });
+      setEditingId(null);
+      setSelectedCustomer(null);
       return;
     }
 
-    // Supabase Cloud Logic
+    const method = editingId ? 'PUT' : 'POST';
+    const url = editingId ? `${API_URL}/${editingId}` : API_URL;
+
     try {
-      if (editingId) {
-        const { error } = await supabase
-          .from('customers')
-          .update(customerData)
-          .eq('id', editingId);
-        if (error) throw error;
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(customerData),
+      });
+
+      if (response.ok) {
+        setFormData({ name: '', number: '', info: '' });
+        setEditingId(null);
+        setSelectedCustomer(null);
+        fetchCustomers();
       } else {
-        const { error } = await supabase
-          .from('customers')
-          .insert([customerData]);
-        if (error) throw error;
+        const errorData = await response.json();
+        setError(errorData.error || 'Something went wrong');
       }
-      fetchCustomers();
-      resetForm();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (error) {
+      setError('Connection failed. Is the server running?');
     }
-  };
-
-  const handleDelete = async (id: number) => {
-    if (!window.confirm('Delete this record permanently?')) return;
-
-    if (!supabase) {
-      const updated = customers.filter(c => c.id !== id);
-      setCustomers(updated);
-      localStorage.setItem('customers', JSON.stringify(updated));
-      setSelectedCustomer(null);
-      return;
-    }
-
-    try {
-      const { error } = await supabase.from('customers').delete().eq('id', id);
-      if (error) throw error;
-      fetchCustomers();
-      setSelectedCustomer(null);
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
-
-  const resetForm = () => {
-    setFormData({ name: '', number: '', info: '' });
-    setEditingId(null);
-    setSelectedCustomer(null);
   };
 
   const handleEdit = (customer: Customer) => {
@@ -141,7 +119,29 @@ function App() {
       number: customer.number.toString(),
       info: customer.info,
     });
-    setSelectedCustomer(null);
+    setSelectedCustomer(null); // Close modal when editing
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('Are you sure you want to delete this customer?')) return;
+
+    if (isLocalStorage) {
+      const updatedCustomers = customers.filter(c => c.id !== id);
+      setCustomers(updatedCustomers);
+      localStorage.setItem('customers', JSON.stringify(updatedCustomers));
+      setSelectedCustomer(null);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+      if (response.ok) {
+        fetchCustomers();
+        setSelectedCustomer(null);
+      }
+    } catch (error) {
+      console.error('Error deleting customer:', error);
+    }
   };
 
   const filteredCustomers = customers.filter(c =>
@@ -151,29 +151,25 @@ function App() {
   return (
     <div className="container">
       <header>
-        <h1>Member Database</h1>
-        <p>{supabase ? '☁️ Cloud Sync Active' : '📱 Local Mode (Setup Cloud below)'}</p>
+        <h1>Contact Directory</h1>
+        <p>A simple and efficient way to manage your contact list</p>
       </header>
-
-      {!supabase && (
-        <div className="setup-notice glass-panel" style={{marginBottom: '2rem', border: '1px solid #6366f1'}}>
-          <h3>⚠️ Cloud Sync Not Setup</h3>
-          <p>To view members on any device, create a free project at <strong>supabase.com</strong> and add your keys to the project settings.</p>
-        </div>
-      )}
 
       <div className="main-content">
         <section className="form-section glass-panel">
-          <h2>{editingId ? '📝 Edit Member' : '➕ Add New Member'}</h2>
+          <h2>{editingId ? '✨ Edit Member' : '🚀 New Member'}</h2>
           {error && <div className="error-message">{error}</div>}
           <form onSubmit={handleSubmit}>
             <div className="input-group">
               <label>Full Name</label>
               <input
                 type="text"
-                placeholder="e.g. John Doe"
+                placeholder="Enter full name"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, name: e.target.value });
+                  if (error) setError(null);
+                }}
                 required
               />
             </div>
@@ -181,109 +177,123 @@ function App() {
               <label>Phone Number</label>
               <input
                 type="number"
-                placeholder="e.g. 0790000000"
+                placeholder="Enter phone number"
                 value={formData.number}
                 onChange={(e) => setFormData({ ...formData, number: e.target.value })}
               />
             </div>
             <div className="input-group">
-              <label>Member Info / Bio</label>
+              <label>Bio / Notes</label>
               <textarea
-                placeholder="Additional details..."
+                placeholder="What defines this person?"
                 value={formData.info}
                 onChange={(e) => setFormData({ ...formData, info: e.target.value })}
               />
             </div>
-            <div className="form-actions">
-              <button type="submit" className="btn-primary" disabled={loading}>
-                {editingId ? 'Save Changes' : 'Add to Database'}
+            <button type="submit" className="btn-primary">
+              {editingId ? 'Update Record' : 'Create Record'}
+            </button>
+            {editingId && (
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{marginTop: '0.5rem'}}
+                onClick={() => {
+                  setEditingId(null);
+                  setFormData({ name: '', number: '', info: '' });
+                }}
+              >
+                Cancel Edit
               </button>
-              {editingId && (
-                <button type="button" className="btn-secondary" onClick={resetForm}>
-                  Cancel
-                </button>
-              )}
-            </div>
+            )}
           </form>
         </section>
 
-        <section className="list-section glass-panel">
+        <section className="list-section">
           <div className="list-header">
-            <div className="stats">
-              <h2>Database Registry</h2>
-              <span className="count-badge">{filteredCustomers.length} Members</span>
-            </div>
-            <div className="search-container">
-              <input
-                type="text"
-                placeholder="Search..."
-                className="search-bar"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
+            <h2>Registry ({filteredCustomers.length})</h2>
+            <input
+              type="text"
+              placeholder="Search..."
+              className="search-bar"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
-          
-          <div className="table-container">
-            {loading ? (
-              <div className="no-data">Loading database...</div>
+          <div className="customer-grid">
+            {filteredCustomers.length > 0 ? (
+              filteredCustomers.map((customer) => (
+                <div 
+                  key={customer.id} 
+                  className="customer-card"
+                  onClick={() => setSelectedCustomer(customer)}
+                >
+                  <div className="card-info">
+                    <h3>{customer.name}</h3>
+                    <p className="phone">📱 {customer.number}</p>
+                  </div>
+                  <div className="card-actions">
+                    <button 
+                      className="btn-edit-small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdit(customer);
+                      }}
+                      title="Edit"
+                    >
+                      ✏️
+                    </button>
+                    <button 
+                      className="btn-delete-small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(customer.id);
+                      }}
+                      title="Delete"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+              ))
             ) : (
-              <table className="member-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Phone</th>
-                    <th>Info</th>
-                    <th className="actions-cell">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredCustomers.length > 0 ? (
-                    filteredCustomers.map((customer) => (
-                      <tr key={customer.id} onClick={() => setSelectedCustomer(customer)}>
-                        <td><strong>{customer.name}</strong></td>
-                        <td>{customer.number}</td>
-                        <td className="info-cell">{customer.info || '-'}</td>
-                        <td className="actions-cell">
-                          <div className="action-buttons">
-                            <button className="btn-icon edit" onClick={(e) => { e.stopPropagation(); handleEdit(customer); }}>✏️</button>
-                            <button className="btn-icon delete" onClick={(e) => { e.stopPropagation(); handleDelete(customer.id); }}>🗑️</button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr><td colSpan={4} className="no-data">No records found.</td></tr>
-                  )}
-                </tbody>
-              </table>
+              <div className="no-data">No records match your search.</div>
             )}
           </div>
         </section>
       </div>
 
+      {/* Customer Modal */}
       {selectedCustomer && (
         <div className="modal-overlay" onClick={() => setSelectedCustomer(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <button className="close-modal" onClick={() => setSelectedCustomer(null)}>✕</button>
             <div className="modal-details">
-              <div className="detail-header">
-                <label>Member Record</label>
+              <div className="detail-row">
+                <label>Name</label>
                 <h2>{selectedCustomer.name}</h2>
               </div>
-              <div className="detail-grid">
-                <div className="detail-item">
-                  <label>Phone Number</label>
-                  <p>{selectedCustomer.number}</p>
-                </div>
-                <div className="detail-item full-width">
-                  <label>Information</label>
-                  <p>{selectedCustomer.info || 'No details recorded.'}</p>
-                </div>
+              <div className="detail-row">
+                <label>Phone</label>
+                <p>+ {selectedCustomer.number}</p>
               </div>
-              <div className="modal-footer">
-                <button className="btn-primary" onClick={() => handleEdit(selectedCustomer)}>Edit Record</button>
-                <button className="btn-danger" onClick={() => handleDelete(selectedCustomer.id)}>Delete Permanentely</button>
+              <div className="detail-row">
+                <label>Information</label>
+                <p>{selectedCustomer.info || 'No additional information provided.'}</p>
+              </div>
+              <div className="modal-actions">
+                <button 
+                  className="btn-edit-large"
+                  onClick={() => handleEdit(selectedCustomer)}
+                >
+                  Edit Details
+                </button>
+                <button 
+                  className="btn-delete-large"
+                  onClick={() => handleDelete(selectedCustomer.id)}
+                >
+                  Delete
+                </button>
               </div>
             </div>
           </div>
